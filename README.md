@@ -41,7 +41,7 @@ python zipper.py [options]
 The script supports the following options:
 
 - `--detail TYPE`: Provides detailed instructions for a specific option type. Valid values for TYPE are `chars` and `list`.
-- `--file FILE`: Specifies the path to the compressed file (either .rar or .zip) that you want to crack.
+- `--file DEPARTURE_PATH DESTINATION_PATH`: Specifies the path to the compressed file (either .rar or .zip) that you want to crack. Leave `DESTINATION_PATH` empty to extract right at working directory.
 - `--chars ALPHABET LENGTH PROCESS`: Performs character-based brute-forcing. `ALPHABET` represents the character set to use, `LENGTH` specifies the password length range (format: START_LENGTH,STOP_LENGTH), and `PROCESS` indicates the number of parallel processes to run.
 - `--list TXT_FILE PROCESS`: Performs list-based brute-forcing. `TXT_FILE` (.txt only) specifies the path to a text file containing a list of passwords to test, and `PROCESS` indicates the number of parallel processes to run.
 
@@ -58,7 +58,7 @@ The script supports the following options:
 - List-based brute-forcing:
 
   ```
-  python zipper.py --file test.zip --list passwords.txt 2
+  python zipper.py --file test.zip ./path/to/extract/ --list passwords.txt 2
   ```
 
   This command will read the passwords from the `passwords.txt` file and attempt to crack the password using the provided list. It will use 2 parallel processes for faster cracking.

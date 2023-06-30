@@ -39,6 +39,8 @@ RESET = '\033[0m'
 UP = "\033[1A"
 CLEAR = "\x1b[2K"
 
+def path_format(path):
+    return (r'{}'.format(path)).replace('//', '/').replace(r'\\', '/')
 
 def detail(help_detail):
     if help_detail == 'chars':
@@ -58,6 +60,13 @@ FORMAT: --list {LIGHT_BLUE}[TXT_FILE]{RESET} {LIGHT_GREEN}[PROCESS]{RESET}
 
 + {LIGHT_BLUE}[TXT_FILE]{RESET} : .txt file used for testing password
 + {LIGHT_GREEN}[PROCESS]{RESET} : Number of processes to run in parallel (integer only)
+"""
+        )
+    
+    elif help_detail == 'file':
+        print(
+f"""
+FORMAT: --file {LIGHT_BLUE}[DEPARTURE_PATH]{RESET} {LIGHT_GREEN}[DESTINATION_PATH]{RESET}
 """
         )
     else:
@@ -98,29 +107,37 @@ def alphabet_format(alphabet):
     elif alphabet == 'punctuation':
         return string.punctuation
     else:
-        return alphabet
+        return alphabet.replace(' ', '').strip()
 
-def extract_format(t_file, pwd):
+def extract_format(file, pwd):
+    dep = path_format(file[0])
+    des = '.'
+    if len(file) == 2:
+        des = path_format(file[1])
+    elif len(file) > 2:
+        print(f"{RED}ArgumentError: Expected 2 arguments{RESET}")
+        raise SystemExit
+
     try:
-        if '.zip' in t_file:
-            zip = ZipFile(t_file, 'r')
+        if '.zip' in dep:
+            zip = ZipFile(dep, 'r')
             zip.extractall(
-                path=t_file.replace('.zip','')+"_uncompressed", 
+                path = des + '/' + dep[dep.rfind('/') + 1: ].replace('.zip','')+"_uncompressed", 
                 pwd=pwd.encode('utf-8')
             )
-        elif '.rar' in t_file:
-            rar = rarfile.RarFile(t_file, pwd=pwd)
+        elif '.rar' in dep:
+            rar = rarfile.RarFile(dep, pwd=pwd)
             rar.extractall(
-                path=t_file.replace('.rar','')+"_uncompressed"
+                path = des + '/' + dep[dep.rfind('/') + 1: ].replace('.rar','')+"_uncompressed"
             )
     except TypeError:
-        print(f"FileNotFoundError: No such file or directory: '{file}'")
+        print(f"{RED}FileNotFoundError: No such file or directory: '{file}'{RESET}")
         raise SystemExit
 
 
 parser = argparse.ArgumentParser(description="Python password bruteforce program using multiprocessing. Copyright © 2023 NautilusZ")
 parser.add_argument('--detail', metavar='TYPE', type=str, help="Detailed instruction of 'chars' or 'list' option")
-parser.add_argument('--file', type=str, help="Supported extension: .rar, .zip")
+parser.add_argument('--file', metavar='', nargs='+', type=str, help="Supported extension: .rar, .zip")
 parser.add_argument('--chars', metavar='', nargs='+', type=str, help="Character-based brute-force. use '--detail chars' for instruction")
 parser.add_argument('--list', metavar='', nargs='+', type=str, help="List-based brute-force. use '--detail list' for instruction")
 task_args = vars(parser.parse_args())
@@ -160,6 +177,7 @@ elif type_lst != None and type_chars == None:
 
             num_parts = int(type_lst[1]) if int(type_lst[1]) < len(lines) else len(lines)
             part_size = len(lines) // num_parts
+
         else:
             print(f'{RED}FileTypeError: Must be a .txt file{RESET}')
             raise SystemExit
@@ -169,9 +187,10 @@ if (type_chars != None or type_lst != None) and file == None:
     raise SystemExit
     
     
-def chars_task(n, file, task_args, event, result_queue, shared_tasks):
+def chars_task(n, file, task_args, event, result_queue, shared_tasks, shared_total, shared_case):
     # print("task_args:" + str(task_args))
     for i in itertools.product(*task_args):
+        shared_case.value += 1
         pwd = ''.join(i)
         shared_tasks[n] = f"TESTING: {pwd} in [{CYAN}task {n}{RESET}]"
         try:
@@ -181,12 +200,15 @@ def chars_task(n, file, task_args, event, result_queue, shared_tasks):
             break
         except RuntimeError:
             continue
+    
+    shared_total.value += 1
     return
 
-def list_task(n, file, list_range, event, result_queue, shared_tasks, lock):
+def list_task(n, file, list_range, event, result_queue, shared_tasks, shared_total, shared_case, lock):
     rar = None  # Initialize rarfile.RarFile outside the loop
     for i in range(list_range[0], list_range[1]):
         lock.acquire()
+        shared_case.value += 1
         pwd = lines[i].replace('\n', '')
         if rar is None:
             # Acquire the lock before creating the rarfile.RarFile instance
@@ -204,20 +226,28 @@ def list_task(n, file, list_range, event, result_queue, shared_tasks, lock):
     if rar is not None:
         rar.close()
     
+    shared_total.value += 1
     return
 
-def print_tasks(shared_tasks):
+def print_tasks(shared_tasks, shared_case, total_cases):
     while True:
         print('\n'.join(shared_tasks))
-        print((UP + CLEAR)*num_parts, end="")
+        print(f'[+] Tested cases: {YELLOW}{shared_case.value}/{total_cases}{RESET}')
+        print((UP + CLEAR)*(num_parts+1), end="")
 
+def check_finish(shared_total, num_parts, event):
+    while True:
+        if shared_total.value == num_parts:
+            event.set()
+            break
 
 if __name__ == "__main__":
 
     detail(help_detail)
 
     if task_type == 'chars':
-        requirements(file, alphabet, length, int(type_chars[2]))
+        requirements(path_format(file[0]), alphabet, length, int(type_chars[2]))
+
         for length_case in range(length[0], length[1]+1):
 
             st = time.time()
@@ -226,21 +256,32 @@ if __name__ == "__main__":
             manager = Manager()
             processes = []
             shared_tasks = manager.list([""]*num_parts) # Used for displaying the process in terminal through `print_tasks()`
+            shared_total = manager.Value('i', 0)
+            shared_case = manager.Value('c', 0)
+            limit_start_letter = []
+            total_cases = (len(alphabet))**length_case
+
+            for i in range(0, num_parts):
+                limit_start_letter.append(part_size*i)
 
             for i in range(0, num_parts):
                 task_args = [list(alphabet)]*(length_case-1)
                 start_letter = [alphabet[part_size*i]]
+                limit = limit_start_letter[i+1] if i != num_parts-1 else len(alphabet) # Limit the current `start_letter` to the `start_letter` of the next task so that it won't run until the end of the alphabet
 
-                for next_letter in range(part_size*i+1, len(alphabet)):
+                for next_letter in range(part_size*i+1, limit):
                     start_letter.append(alphabet[next_letter]) # Add all other letters after `start_letter` in the alphabet to run all the cases
 
                 task_args = [start_letter] + task_args # Add `start_letter` list to the `task_args` list
                 
-                p = Process(target=chars_task, args=(i, file, task_args, event, result_queue, shared_tasks))
+                p = Process(target=chars_task, args=(i, file, task_args, event, result_queue, shared_tasks, shared_total, shared_case))
                 processes.append(p)
 
-            print_tasks_proc = Process(target=print_tasks, args=(shared_tasks,))
+            print_tasks_proc = Process(target=print_tasks, args=(shared_tasks, shared_case, total_cases))
             processes.append(print_tasks_proc)
+
+            check_finish_proc = Process(target=check_finish, args=(shared_total, num_parts, event))
+            processes.append(check_finish_proc)
 
             for p in processes:
                 p.start()
@@ -251,15 +292,15 @@ if __name__ == "__main__":
 
             et = time.time()
             if not result_queue.empty():
-                print(f"CORRECT PASSWORD: {result_queue.get()}")
-                print(f"Finished in {et-st}s")
+                print(f"[+] CORRECT PASSWORD: {result_queue.get()}")
+                print(f"[+] Finished in {round(et-st, 5)}s")
                 break
             else:
-                print(f"Password not found with length: {length_case}")
-                print(f"Finished in {et-st}s\n")
+                print(f"[+] Password not found with length: {YELLOW}{length_case}{RESET}")
+                print(f"[+] Finished in {round(et-st, 5)}s\n")
                 
     elif task_type == 'list':
-        requirements(file, alphabet, length, 0)
+        requirements(path_format(file[0]), alphabet, length, 0)
 
         st = time.time()
         event = Event()
@@ -268,7 +309,9 @@ if __name__ == "__main__":
         manager = Manager()
         processes = []
         shared_tasks = manager.list([""]*num_parts)
-        
+        shared_total = manager.Value('i', 0)
+        shared_case = manager.Value('c', 0)
+        total_cases = len(lines)
 
         for i in range(0, num_parts):
             if i == num_parts-1:
@@ -276,11 +319,14 @@ if __name__ == "__main__":
             else:
                 list_range = [i*part_size, i*part_size + part_size]
             
-            p = Process(target=list_task, args=(i, file, list_range, event, result_queue, shared_tasks, lock))
+            p = Process(target=list_task, args=(i, file, list_range, event, result_queue, shared_tasks, shared_total, shared_case, lock))
             processes.append(p)
 
-        print_tasks_proc = Process(target=print_tasks, args=(shared_tasks,))
+        print_tasks_proc = Process(target=print_tasks, args=(shared_tasks, shared_case, total_cases))
         processes.append(print_tasks_proc)
+
+        check_finish_proc = Process(target=check_finish, args=(shared_total, num_parts, event))
+        processes.append(check_finish_proc)
 
         for p in processes:
             p.start()
@@ -291,8 +337,8 @@ if __name__ == "__main__":
 
         et = time.time()
         if not result_queue.empty():
-            print(f"CORRECT PASSWORD: {result_queue.get()}")
-            print(f"Finished in {et-st}s")
+            print(f"[+] CORRECT PASSWORD: {result_queue.get()}")
+            print(f"[+] Finished in {round(et-st, 5)}s")
         else:
-            print(f"Password not found with given list!")
-            print(f"Finished in {et-st}s\n")     
+            print(f"[+] Password not found with given list!")
+            print(f"[+] Finished in {round(et-st, 5)}s\n")     
