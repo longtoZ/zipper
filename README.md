@@ -44,6 +44,8 @@ The script supports the following options:
 - `--file DEPARTURE_PATH DESTINATION_PATH`: Specifies the path to the compressed file (either .rar or .zip) that you want to crack. Leave `DESTINATION_PATH` empty to extract right at working directory.
 - `--chars ALPHABET LENGTH PROCESS`: Performs character-based brute-forcing. `ALPHABET` represents the character set to use, `LENGTH` specifies the password length range (format: START_LENGTH,STOP_LENGTH), and `PROCESS` indicates the number of parallel processes to run.
 - `--list TXT_FILE PROCESS`: Performs list-based brute-forcing. `TXT_FILE` (.txt only) specifies the path to a text file containing a list of passwords to test, and `PROCESS` indicates the number of parallel processes to run.
+- `--include WORD`: Add the word (one only) to the tested string, but make sure the length is maintained. If the length of the inserted word exceeds the given length, an error will be thrown.
+- `--log`: Log the previous tested length case in terminal.
 
 ### Examples
 

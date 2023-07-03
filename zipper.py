@@ -48,7 +48,7 @@ def detail(help_detail):
 f"""
 FORMAT: --chars {LIGHT_BLUE}[ALPHABET]{RESET} {LIGHT_GREEN}[LENGTH]{RESET} {LIGHT_CYAN}[PROCESS]{RESET}
 
-+ {LIGHT_BLUE}[ALPHABET]{RESET} : Default type: all, letters, lowercase, uppercase, digits, punctuation. Or you can pass your custom alphabet instead of using default one (ex: 12345abcd, XYZ!@#$)
++ {LIGHT_BLUE}[ALPHABET]{RESET} : Default type: all, letters, lowercase, uppercase, digits, punctuation or mutiple ones separated by comma (ex: digits,uppercase). Or you can pass your custom alphabet instead of using default one (ex: 12345abcd, XYZ!@#$)
 + {LIGHT_GREEN}[LENGTH]{RESET} : Format: START_LENGTH,STOP_LENGTH (ex: 3,8 means that the program will try to find the password whose length is from 3 to 8 letters)
 + {LIGHT_CYAN}[PROCESS]{RESET} : Number of processes to run in parallel (integer only)
 """
@@ -60,13 +60,6 @@ FORMAT: --list {LIGHT_BLUE}[TXT_FILE]{RESET} {LIGHT_GREEN}[PROCESS]{RESET}
 
 + {LIGHT_BLUE}[TXT_FILE]{RESET} : .txt file used for testing password
 + {LIGHT_GREEN}[PROCESS]{RESET} : Number of processes to run in parallel (integer only)
-"""
-        )
-    
-    elif help_detail == 'file':
-        print(
-f"""
-FORMAT: --file {LIGHT_BLUE}[DEPARTURE_PATH]{RESET} {LIGHT_GREEN}[DESTINATION_PATH]{RESET}
 """
         )
     else:
@@ -94,20 +87,24 @@ def requirements(file, alphabet, length, process):
         raise SystemExit
     
 def alphabet_format(alphabet):
-    if alphabet == 'all':
-        return string.printable.strip()
-    elif alphabet == 'letters':
-        return string.ascii_letters
-    elif alphabet == 'lowercase':
-        return string.ascii_lowercase
-    elif alphabet == 'uppercase':
-        return string.ascii_uppercase
-    elif alphabet == 'digits':
-        return string.digits
-    elif alphabet == 'punctuation':
-        return string.punctuation
-    else:
-        return alphabet.replace(' ', '').strip()
+    full = ''
+    for i in alphabet.split(','):
+        if i == 'all':
+            full += string.printable.strip()
+        elif i == 'letters':
+            full += string.ascii_letters
+        elif i == 'lowercase':
+            full += string.ascii_lowercase
+        elif i == 'uppercase':
+            full += string.ascii_uppercase
+        elif i == 'digits':
+            full += string.digits
+        elif i == 'punctuation':
+            full += string.punctuation
+        else:
+            full += i.strip()
+    
+    return full
 
 def extract_format(file, pwd):
     dep = path_format(file[0])
@@ -135,17 +132,21 @@ def extract_format(file, pwd):
         raise SystemExit
 
 
-parser = argparse.ArgumentParser(description="Python password bruteforce program using multiprocessing. Copyright © 2023 NautilusZ")
+parser = argparse.ArgumentParser(description="Python password bruteforce program using multiprocessing module. Copyright © 2023 NautilusZ")
 parser.add_argument('--detail', metavar='TYPE', type=str, help="Detailed instruction of 'chars' or 'list' option")
 parser.add_argument('--file', metavar='', nargs='+', type=str, help="Supported extension: .rar, .zip")
 parser.add_argument('--chars', metavar='', nargs='+', type=str, help="Character-based brute-force. use '--detail chars' for instruction")
 parser.add_argument('--list', metavar='', nargs='+', type=str, help="List-based brute-force. use '--detail list' for instruction")
+parser.add_argument('--include', metavar='WORD', type=str, help="Word to include in password string")
+parser.add_argument('--log', metavar='', nargs='*', help='Log the previous tested length cases (for --chars only)')
 task_args = vars(parser.parse_args())
 
 help_detail = task_args['detail']
 file = task_args['file']
 type_chars = task_args['chars']
 type_lst = task_args['list']
+word_include = task_args['include'].split(',') if task_args['include'] != None else None
+log = task_args['log']
 
 alphabet = ''
 length = []
@@ -188,18 +189,32 @@ if (type_chars != None or type_lst != None) and file == None:
     
     
 def chars_task(n, file, task_args, event, result_queue, shared_tasks, shared_total, shared_case):
-    # print("task_args:" + str(task_args))
-    for i in itertools.product(*task_args):
-        shared_case.value += 1
-        pwd = ''.join(i)
-        shared_tasks[n] = f"TESTING: {pwd} in [{CYAN}task {n}{RESET}]"
-        try:
-            extract_format(file, pwd)
-            result_queue.put(f"{LIGHT_GREEN}{pwd}{RESET}")
-            event.set()
-            break
-        except RuntimeError:
-            continue
+    if word_include != None:
+        for part in task_args:
+            part = [j.split(',') for j in part]
+            for i in itertools.product(*part):
+                shared_case.value += 1
+                pwd = ''.join(i)
+                shared_tasks[n] = f"{LIGHT_GRAY}Process_{n} : {RESET}{pwd}"
+                try:
+                    extract_format(file, pwd)
+                    result_queue.put(pwd)
+                    event.set()
+                    break
+                except RuntimeError:
+                    continue
+    else:
+        for i in itertools.product(*task_args):
+            shared_case.value += 1
+            pwd = ''.join(i)
+            shared_tasks[n] = f"{LIGHT_GRAY}Process_{n} : {RESET}{pwd}"
+            try:
+                extract_format(file, pwd)
+                result_queue.put(pwd)
+                event.set()
+                break
+            except RuntimeError:
+                continue
     
     shared_total.value += 1
     return
@@ -212,10 +227,10 @@ def list_task(n, file, list_range, event, result_queue, shared_tasks, shared_tot
         pwd = lines[i].replace('\n', '')
         if rar is None:
             # Acquire the lock before creating the rarfile.RarFile instance
-            shared_tasks[n] = f"TESTING: {pwd} in [{CYAN}task {n}{RESET}]"
+            shared_tasks[n] = f"{LIGHT_GRAY}Process_{n} : {RESET}{pwd}"
             try:
                 extract_format(file, pwd)
-                result_queue.put(f"{LIGHT_GREEN}{pwd}{RESET}")
+                result_queue.put(pwd)
                 event.set()
                 break  # Password found, terminate the loop
             except RuntimeError:
@@ -230,10 +245,15 @@ def list_task(n, file, list_range, event, result_queue, shared_tasks, shared_tot
     return
 
 def print_tasks(shared_tasks, shared_case, total_cases):
+    st = time.time()
     while True:
+        delta = (time.time() - st)
+        speed = round(shared_case.value//delta) if delta != 0 else 0
         print('\n'.join(shared_tasks))
-        print(f'[+] Tested cases: {YELLOW}{shared_case.value}/{total_cases}{RESET}')
-        print((UP + CLEAR)*(num_parts+1), end="")
+        print(f'{LIGHT_GRAY}Tested cases : {RESET}{shared_case.value}/{total_cases} ({speed}pwd/s)')
+        print(f'{LIGHT_GRAY}Elapsed time : {RESET}' + '{:02.0f}:{:02.0f}:{:02.0f}:{:06.3f}'.format(delta//86400, (delta%86400)//3600, ((delta%86400)%3600)//60, round(((delta%86400)%3600)%60, 3)))
+        print((UP + CLEAR)*(num_parts+2), end="")
+        time.sleep(0.1) # Refresh rate
 
 def check_finish(shared_total, num_parts, event):
     while True:
@@ -247,10 +267,11 @@ if __name__ == "__main__":
 
     if task_type == 'chars':
         requirements(path_format(file[0]), alphabet, length, int(type_chars[2]))
+        st = time.time()
 
         for length_case in range(length[0], length[1]+1):
+            print(f'{BOLD}{LIGHT_GRAY}[+] TESTING PASSWORD WITH LENGTH: {length_case}{RESET}\n')
 
-            st = time.time()
             event = Event()
             result_queue = Queue()
             manager = Manager()
@@ -264,18 +285,54 @@ if __name__ == "__main__":
             for i in range(0, num_parts):
                 limit_start_letter.append(part_size*i)
 
-            for i in range(0, num_parts):
-                task_args = [list(alphabet)]*(length_case-1)
-                start_letter = [alphabet[part_size*i]]
-                limit = limit_start_letter[i+1] if i != num_parts-1 else len(alphabet) # Limit the current `start_letter` to the `start_letter` of the next task so that it won't run until the end of the alphabet
-
-                for next_letter in range(part_size*i+1, limit):
-                    start_letter.append(alphabet[next_letter]) # Add all other letters after `start_letter` in the alphabet to run all the cases
-
-                task_args = [start_letter] + task_args # Add `start_letter` list to the `task_args` list
+            if word_include != None:
                 
-                p = Process(target=chars_task, args=(i, file, task_args, event, result_queue, shared_tasks, shared_total, shared_case))
-                processes.append(p)
+                if len(''.join(word_include)) <= length_case:
+                    remains = length_case - len(''.join(word_include)) # Remained positions for characters in alphabet
+                    raw_lst = [','.join(word_include)] + [','.join(list(alphabet))]*remains # It is supposed to assist more than one word but currently it only works with one.
+                    full_lst = list(set(itertools.permutations(raw_lst))) # Remove duplicated cases
+                    total_cases = 0
+
+                    for i in full_lst:
+                        each = 1
+                        for j in i:
+                            each *= len(j.split(','))
+                        total_cases += each
+
+                    if len(full_lst) < num_parts:
+                        print(f'{YELLOW}[+] Warning: Cannot generate {num_parts} processes. Trying {len(full_lst)} processes...{RESET}\n')
+                        part_size_include = 1
+                        # shared_tasks = manager.list([""]*len(full_lst))
+                    else:
+                        part_size_include = len(full_lst) // num_parts
+                    
+
+                    for i in range(0, num_parts):
+                        if i == num_parts-1:
+                            task_args = full_lst[i : len(full_lst)]
+                        else:
+                            task_args = full_lst[i : part_size_include+i]
+
+                        p = Process(target=chars_task, args=(i, file, task_args, event, result_queue, shared_tasks, shared_total, shared_case))
+                        processes.append(p)
+                        
+                else:
+                    print(f'{RED}Error: Length of included word(s) is greater than given length{RESET}')
+                    raise SystemExit
+
+            else:
+                for i in range(0, num_parts):
+                    task_args = [list(alphabet)]*(length_case-1)
+                    start_letter = [alphabet[part_size*i]]
+                    limit = limit_start_letter[i+1] if i != num_parts-1 else len(alphabet) # Limit the current `start_letter` to the `start_letter` of the next task so that it won't run until the end of the alphabet
+
+                    for next_letter in range(part_size*i+1, limit):
+                        start_letter.append(alphabet[next_letter]) # Add all other letters after `start_letter` in the alphabet to run all the cases
+
+                    task_args = [start_letter] + task_args # Add `start_letter` list to the `task_args` list
+                
+                    p = Process(target=chars_task, args=(i, file, task_args, event, result_queue, shared_tasks, shared_total, shared_case))
+                    processes.append(p)
 
             print_tasks_proc = Process(target=print_tasks, args=(shared_tasks, shared_case, total_cases))
             processes.append(print_tasks_proc)
@@ -292,12 +349,18 @@ if __name__ == "__main__":
 
             et = time.time()
             if not result_queue.empty():
-                print(f"[+] CORRECT PASSWORD: {result_queue.get()}")
-                print(f"[+] Finished in {round(et-st, 5)}s")
+                delta = et-st
+                print(f"{LIGHT_GREEN}[+] CORRECT PASSWORD: {result_queue.get()}{RESET}")
+                print('[+] Time usage : {:02.0f}:{:02.0f}:{:02.0f}:{:06.3f}'.format(delta//86400, (delta%86400)//3600, ((delta%86400)%3600)//60, round(((delta%86400)%3600)%60, 3)))
+                print('-'*50 + '\n\n')
                 break
             else:
-                print(f"[+] Password not found with length: {YELLOW}{length_case}{RESET}")
-                print(f"[+] Finished in {round(et-st, 5)}s\n")
+                print(f"{YELLOW}[+] Password not found with length: {length_case}{RESET}")
+                print('-'*50 +'\n\n')
+
+                if log == None:
+                    time.sleep(1)
+                    print((UP + CLEAR)*20, end="")
                 
     elif task_type == 'list':
         requirements(path_format(file[0]), alphabet, length, 0)
@@ -337,8 +400,7 @@ if __name__ == "__main__":
 
         et = time.time()
         if not result_queue.empty():
-            print(f"[+] CORRECT PASSWORD: {result_queue.get()}")
-            print(f"[+] Finished in {round(et-st, 5)}s")
+            print(f"{LIGHT_GREEN}[+] CORRECT PASSWORD: {result_queue.get()}{RESET}")
         else:
-            print(f"[+] Password not found with given list!")
-            print(f"[+] Finished in {round(et-st, 5)}s\n")     
+            print(f"{YELLOW}[+] Password not found with given list!{YELLOW}")
+  
