@@ -5,15 +5,13 @@ import os
 import time
 from multiprocessing import Event, Queue, Process, Manager, Lock
 from zipfile import ZipFile
-from unrar import rarfile
+import subprocess
 import itertools
 import string
 import argparse
 
 
-
-# ANSI ESCAPE SEQUENCES COLOR
-
+# ANSI ESCAPE SEQUENCES
 BLACK = "\033[0;30m"
 RED = "\033[0;31m"
 GREEN = "\033[0;32m"
@@ -38,6 +36,10 @@ UNDERLINE = "\033[4m"
 RESET = '\033[0m'
 UP = "\033[1A"
 CLEAR = "\x1b[2K"
+
+def wait(wait_time):
+    wait_time = wait_time[0]
+    return 0 if wait_time==None else float(wait_time)
 
 def path_format(path):
     return (r'{}'.format(path)).replace('//', '/').replace(r'\\', '/')
@@ -69,17 +71,22 @@ def requirements(file, alphabet, length, process):
     check = True
     error = []
 
-    if file != None and os.path.exists(file) == False:
-        check = False
-        error.append(f"FileNotFoundError: No such file or directory: '{file}'")
+    for i in file:
+        if path_format(i) != None and os.path.exists(path_format(i)) == False:
+            check = False
+            error.append(f"Error: No such file or directory: '{i}'")
 
     if int(process) > 10:
         check = False
-        error.append('ProcessLimitError: Maximum of process is 10')
+        error.append('Error: Maximum of process is 10')
 
     if type_chars != None and type_lst != None:
         check = False
-        error.append('OptionError: Choose "--chars" or "--list" only, not both!')
+        error.append('Error: Choose "--chars" or "--list" only, not both!')
+    
+    if length[0] > length[1]:
+        check = False
+        error.append('Error: Minimum length is greater than maximum length')
     
     if check == False:
         for i in error:
@@ -89,6 +96,10 @@ def requirements(file, alphabet, length, process):
 def alphabet_format(alphabet):
     full = ''
     for i in alphabet.split(','):
+        if ' ' in i:
+            print(f'{RED}Error: Whitespace is not allowed in alphabet{RESET}')
+            raise SystemExit
+
         if i == 'all':
             full += string.printable.strip()
         elif i == 'letters':
@@ -106,15 +117,16 @@ def alphabet_format(alphabet):
     
     return full
 
-def extract_format(file, pwd):
+def extract_format(file, pwd, wait_time):
     dep = path_format(file[0])
     des = '.'
     if len(file) == 2:
         des = path_format(file[1])
     elif len(file) > 2:
-        print(f"{RED}ArgumentError: Expected 2 arguments{RESET}")
+        print(f"{RED}Error: Expected 2 arguments{RESET}")
         raise SystemExit
 
+    time.sleep(wait(wait_time))
     try:
         if '.zip' in dep:
             zip = ZipFile(dep, 'r')
@@ -122,13 +134,18 @@ def extract_format(file, pwd):
                 path = des + '/' + dep[dep.rfind('/') + 1: ].replace('.zip','')+"_uncompressed", 
                 pwd=pwd.encode('utf-8')
             )
+            zip.close()
         elif '.rar' in dep:
-            rar = rarfile.RarFile(dep, pwd=pwd)
-            rar.extractall(
-                path = des + '/' + dep[dep.rfind('/') + 1: ].replace('.rar','')+"_uncompressed"
-            )
+            result = subprocess.run(['unrar', 'x', '-p' + pwd, dep, des], capture_output=True, text=True, check=False, input='y')
+            if result.returncode == 11:
+                # time.sleep(0.1) For lower CPU usage
+                raise RuntimeError
+
     except TypeError:
-        print(f"{RED}FileNotFoundError: No such file or directory: '{file}'{RESET}")
+        print(f"{RED}Error: No such file or directory: '{file}'{RESET}")
+        raise SystemExit
+    except FileExistsError:
+        print(f"{RED}Error: File exists: '{file}'{RESET}")
         raise SystemExit
 
 
@@ -138,7 +155,8 @@ parser.add_argument('--file', metavar='', nargs='+', type=str, help="Supported e
 parser.add_argument('--chars', metavar='', nargs='+', type=str, help="Character-based brute-force. use '--detail chars' for instruction")
 parser.add_argument('--list', metavar='', nargs='+', type=str, help="List-based brute-force. use '--detail list' for instruction")
 parser.add_argument('--include', metavar='WORD', type=str, help="Word to include in password string")
-parser.add_argument('--log', metavar='', nargs='*', help='Log the previous tested length cases (for --chars only)')
+parser.add_argument('--log', metavar='', nargs='*', help='Log the previous tested cases (for --chars only)')
+parser.add_argument('--wait', metavar='TIME', nargs=1, type=float, help='Time interval in seconds between each password trial (recommended for .rar)')
 task_args = vars(parser.parse_args())
 
 help_detail = task_args['detail']
@@ -147,6 +165,7 @@ type_chars = task_args['chars']
 type_lst = task_args['list']
 word_include = task_args['include'].split(',') if task_args['include'] != None else None
 log = task_args['log']
+wait_time = task_args['wait']
 
 alphabet = ''
 length = []
@@ -157,7 +176,7 @@ task_type = ''
 
 if type_chars != None and type_lst == None:
     if len(type_chars) != 3:
-        print(f'{RED}ArgumentError: Expected 3 arguments{RESET}')
+        print(f'{RED}Error: Expected 3 arguments{RESET}')
         raise SystemExit
     else:
         task_type = 'chars'
@@ -168,7 +187,7 @@ if type_chars != None and type_lst == None:
 
 elif type_lst != None and type_chars == None:
     if len(type_lst) != 2:
-        print(f'{RED}ArgumentError: Expected 2 arguments{RESET}')
+        print(f'{RED}Error: Expected 2 arguments{RESET}')
         raise SystemExit
     else:
         task_type = 'list'
@@ -180,15 +199,14 @@ elif type_lst != None and type_chars == None:
             part_size = len(lines) // num_parts
 
         else:
-            print(f'{RED}FileTypeError: Must be a .txt file{RESET}')
+            print(f'{RED}Error: Must be a .txt file{RESET}')
             raise SystemExit
         
 if (type_chars != None or type_lst != None) and file == None:
-    print(f"{RED}FileNotFoundError: No such file or directory: '{file}'{RESET}")
+    print(f"{RED}Error: No such file or directory: '{file}'{RESET}")
     raise SystemExit
     
-    
-def chars_task(n, file, task_args, event, result_queue, shared_tasks, shared_total, shared_case):
+def chars_task(n, file, task_args, event, result_queue, shared_tasks, shared_total, shared_case, lock):
     if word_include != None:
         for part in task_args:
             part = [j.split(',') for j in part]
@@ -197,7 +215,7 @@ def chars_task(n, file, task_args, event, result_queue, shared_tasks, shared_tot
                 pwd = ''.join(i)
                 shared_tasks[n] = f"{LIGHT_GRAY}Process_{n} : {RESET}{pwd}"
                 try:
-                    extract_format(file, pwd)
+                    extract_format(file, pwd, wait_time)
                     result_queue.put(pwd)
                     event.set()
                     break
@@ -205,18 +223,22 @@ def chars_task(n, file, task_args, event, result_queue, shared_tasks, shared_tot
                     continue
     else:
         for i in itertools.product(*task_args):
+            # lock.acquire()
             shared_case.value += 1
             pwd = ''.join(i)
             shared_tasks[n] = f"{LIGHT_GRAY}Process_{n} : {RESET}{pwd}"
             try:
-                extract_format(file, pwd)
+                extract_format(file, pwd, wait_time)
                 result_queue.put(pwd)
                 event.set()
                 break
             except RuntimeError:
                 continue
-    
+
+    lock.acquire() # Avoid duplicating password among parallel processes
     shared_total.value += 1
+    lock.release()
+
     return
 
 def list_task(n, file, list_range, event, result_queue, shared_tasks, shared_total, shared_case, lock):
@@ -229,7 +251,7 @@ def list_task(n, file, list_range, event, result_queue, shared_tasks, shared_tot
             # Acquire the lock before creating the rarfile.RarFile instance
             shared_tasks[n] = f"{LIGHT_GRAY}Process_{n} : {RESET}{pwd}"
             try:
-                extract_format(file, pwd)
+                extract_format(file, pwd, wait_time)
                 result_queue.put(pwd)
                 event.set()
                 break  # Password found, terminate the loop
@@ -244,13 +266,13 @@ def list_task(n, file, list_range, event, result_queue, shared_tasks, shared_tot
     shared_total.value += 1
     return
 
-def print_tasks(shared_tasks, shared_case, total_cases):
-    st = time.time()
+def print_tasks(shared_tasks, shared_case, total_cases, st):
     while True:
         delta = (time.time() - st)
         speed = round(shared_case.value//delta) if delta != 0 else 0
         print('\n'.join(shared_tasks))
-        print(f'{LIGHT_GRAY}Tested cases : {RESET}{shared_case.value}/{total_cases} ({speed}pwd/s)')
+        # print(f'{LIGHT_GRAY}Finished processes: {RESET}{shared_total.value}')
+        print(f'{LIGHT_GRAY}Tested cases : {RESET}{shared_case.value}/{total_cases} ({speed} pwd/s)')
         print(f'{LIGHT_GRAY}Elapsed time : {RESET}' + '{:02.0f}:{:02.0f}:{:02.0f}:{:06.3f}'.format(delta//86400, (delta%86400)//3600, ((delta%86400)%3600)//60, round(((delta%86400)%3600)%60, 3)))
         print((UP + CLEAR)*(num_parts+2), end="")
         time.sleep(0.1) # Refresh rate
@@ -261,18 +283,16 @@ def check_finish(shared_total, num_parts, event):
             event.set()
             break
 
-if __name__ == "__main__":
-
-    detail(help_detail)
-
+def main():
     if task_type == 'chars':
-        requirements(path_format(file[0]), alphabet, length, int(type_chars[2]))
+        requirements(file, alphabet, length, int(type_chars[2]))
         st = time.time()
 
         for length_case in range(length[0], length[1]+1):
             print(f'{BOLD}{LIGHT_GRAY}[+] TESTING PASSWORD WITH LENGTH: {length_case}{RESET}\n')
 
             event = Event()
+            lock = Lock()
             result_queue = Queue()
             manager = Manager()
             processes = []
@@ -313,7 +333,7 @@ if __name__ == "__main__":
                         else:
                             task_args = full_lst[i : part_size_include+i]
 
-                        p = Process(target=chars_task, args=(i, file, task_args, event, result_queue, shared_tasks, shared_total, shared_case))
+                        p = Process(target=chars_task, args=(i, file, task_args, event, result_queue, shared_tasks, shared_total, shared_case, lock))
                         processes.append(p)
                         
                 else:
@@ -331,10 +351,10 @@ if __name__ == "__main__":
 
                     task_args = [start_letter] + task_args # Add `start_letter` list to the `task_args` list
                 
-                    p = Process(target=chars_task, args=(i, file, task_args, event, result_queue, shared_tasks, shared_total, shared_case))
+                    p = Process(target=chars_task, args=(i, file, task_args, event, result_queue, shared_tasks, shared_total, shared_case, lock))
                     processes.append(p)
 
-            print_tasks_proc = Process(target=print_tasks, args=(shared_tasks, shared_case, total_cases))
+            print_tasks_proc = Process(target=print_tasks, args=(shared_tasks, shared_case, total_cases, st))
             processes.append(print_tasks_proc)
 
             check_finish_proc = Process(target=check_finish, args=(shared_total, num_parts, event))
@@ -342,7 +362,9 @@ if __name__ == "__main__":
 
             for p in processes:
                 p.start()
-            event.wait()
+                
+            event.wait() # Wait for processes end to continue the code below
+
             for p in processes:
                 if p.is_alive():
                     p.terminate()
@@ -359,11 +381,11 @@ if __name__ == "__main__":
                 print('-'*50 +'\n\n')
 
                 if log == None:
-                    time.sleep(1)
+                    time.sleep(0.5)
                     print((UP + CLEAR)*20, end="")
                 
     elif task_type == 'list':
-        requirements(path_format(file[0]), alphabet, length, 0)
+        requirements(file, alphabet, length, 0)
 
         st = time.time()
         event = Event()
@@ -404,3 +426,8 @@ if __name__ == "__main__":
         else:
             print(f"{YELLOW}[+] Password not found with given list!{YELLOW}")
   
+if __name__ == "__main__":
+
+    detail(help_detail)
+
+    main()

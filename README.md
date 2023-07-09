@@ -5,28 +5,13 @@ This Python script allows you to perform password brute-forcing using multiproce
 ## Prerequisites
 
 - Python 3.x
-- Required Python packages: `unrar`, `zipfile`, `argparse`
+- Required Python packages: [**zipfile**](https://docs.python.org/3/library/zipfile.html), [**argparse**](https://docs.python.org/3/library/argparse.html)
 
-You can install the required packages using pip:
 
-```
-pip install unrar
-```
+> **Warning**
+>
+> Do not remove **UnRAR.exe** since it is used for RAR extraction.
 
-<details>
-<summary><i>How to set path to <code>unrar</code> library in Python?</i></summary>
-<br>
-These steps will help you to setup for <b>Windows</b> environment.
-
-1. Download the file via the [link](https://www.rarlab.com/rar/UnRARDLL.exe) and install it.
-2. For easy replication the following steps, choose the default path, C:\Program Files (x86)\UnrarDLL\
-3. Go to <b>Environment Variables</b> window and selected <b>Advanced</b>.
-4. Click <b>Environment Setting</b>.
-5. Under the <b>User variables</b>, select New.
-6. In the <b>New User Variables</b>, rename the Variable name as <b>UNRAR_LIB_PATH</b>
-7. To select the <b>Variable Value</b>, select Browse file. Depending on your system, 64bit enter C:\Program Files (x86)\UnrarDLL\x64\UnRAR64.dll, if your system is 32bit enter C:\Program Files (x86)\UnrarDLL\UnRAR.dll.
-8. Save the environment path and return to your code editor.
-</details>
 
 ## Usage
 
@@ -40,12 +25,15 @@ python zipper.py [options]
 
 The script supports the following options:
 
-- `--detail TYPE`: Provides detailed instructions for a specific option type. Valid values for TYPE are `chars` and `list`.
-- `--file DEPARTURE_PATH DESTINATION_PATH`: Specifies the path to the compressed file (either .rar or .zip) that you want to crack. Leave `DESTINATION_PATH` empty to extract right at working directory.
-- `--chars ALPHABET LENGTH PROCESS`: Performs character-based brute-forcing. `ALPHABET` represents the character set to use, `LENGTH` specifies the password length range (format: START_LENGTH,STOP_LENGTH), and `PROCESS` indicates the number of parallel processes to run.
-- `--list TXT_FILE PROCESS`: Performs list-based brute-forcing. `TXT_FILE` (.txt only) specifies the path to a text file containing a list of passwords to test, and `PROCESS` indicates the number of parallel processes to run.
-- `--include WORD`: Add the word (one only) to the tested string, but make sure the length is maintained. If the length of the inserted word exceeds the given length, an error will be thrown.
-- `--log`: Log the previous tested length case in terminal.
+| Command | Description |
+| --- | --- |
+| `--detail TYPE` | Provides detailed instructions for a specific option type. Valid values for TYPE are `chars` and `list`. |
+| `--file DEPARTURE_PATH DESTINATION_PATH` | Specifies the path to the compressed file (either .rar or .zip) that you want to crack. Leave `DESTINATION_PATH` empty to extract right at working directory. | 
+| `--chars ALPHABET LENGTH PROCESS` | Performs character-based brute-forcing. `ALPHABET` represents the character set to use, `LENGTH` specifies the password length range (format: START_LENGTH,STOP_LENGTH), and `PROCESS` indicates the number of parallel processes to run. |
+| `--list TXT_FILE PROCESS` | Performs list-based brute-forcing. `TXT_FILE` (.txt only) specifies the path to a text file containing a list of passwords to test, and `PROCESS` indicates the number of parallel processes to run. |
+| `--include WORD` | Add one word to the tested string, but make sure the length is maintained. If the length of the inserted word exceeds the given length, an error will be thrown. |
+| `--log` | Log the previous tested case in terminal. |
+| `--wait` | Wait for a specific time before starting next password trial *(recommended for .rar).* |
 
 ### Examples
 
