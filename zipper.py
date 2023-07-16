@@ -38,8 +38,7 @@ UP = "\033[1A"
 CLEAR = "\x1b[2K"
 
 def wait(wait_time):
-    wait_time = wait_time[0]
-    return 0 if wait_time==None else float(wait_time)
+    return 0 if wait_time==None else float(wait_time[0])
 
 def path_format(path):
     return (r'{}'.format(path)).replace('//', '/').replace(r'\\', '/')
